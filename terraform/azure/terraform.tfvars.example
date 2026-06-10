@@ -1,0 +1,4 @@
+ssh_public_key        = "ssh-rsa AAAA... user@example"
+deploy_ssh_public_key = "ssh-rsa AAAA... deploy@example"
+db_username           = "replace-with-db-username"
+db_password           = "replace-with-long-random-password"
