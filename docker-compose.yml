@@ -43,6 +43,35 @@ services:
     networks:
       - backend_default
 
+  loki:
+    image: grafana/loki:latest
+    container_name: haejillyeok-loki
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yml"]
+    ports:
+      - "${LOKI_HOST_PORT:-3100}:3100"
+    volumes:
+      - /opt/haejillyeok/infra/loki/loki.yml:/etc/loki/loki.yml:ro
+      - /opt/haejillyeok/infra/loki/data:/loki
+    networks:
+      - backend_default
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: haejillyeok-promtail
+    restart: unless-stopped
+    depends_on:
+      - loki
+    command: ["-config.file=/etc/promtail/promtail.yml"]
+    ports:
+      - "${PROMTAIL_HOST_PORT:-9080}:9080"
+    volumes:
+      - /opt/haejillyeok/infra/promtail/promtail.yml:/etc/promtail/promtail.yml:ro
+      - /opt/haejillyeok/infra/promtail/data:/tmp
+      - /var/log/haejillyeok:/var/log/haejillyeok:ro
+    networks:
+      - backend_default
+
   grafana:
     image: grafana/grafana-oss:latest
     container_name: haejillyeok-grafana
@@ -50,6 +79,7 @@ services:
     depends_on:
       - prometheus
       - tempo
+      - loki
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}

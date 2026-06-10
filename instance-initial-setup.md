@@ -133,7 +133,7 @@ apt-mark showhold
 
 ## Infra Docker Compose
 
-OpenTelemetry Collector, Prometheus, Tempo, Grafana는 루트의 `docker-compose.yml`로 관리합니다.
+OpenTelemetry Collector, Prometheus, Tempo, Loki, Promtail, Grafana는 루트의 `docker-compose.yml`로 관리합니다.
 
 서버 배포 경로는 `/opt/haejillyeok/infra`를 기준으로 합니다.
 
@@ -151,8 +151,11 @@ cd /opt/haejillyeok/infra
 ├── otel-collector/config.yml
 ├── prometheus/prometheus.yml
 ├── tempo/tempo.yml
+├── loki/loki.yml
+├── promtail/promtail.yml
 ├── grafana/provisioning/datasources/prometheus.yml
 ├── grafana/provisioning/datasources/tempo.yml
+├── grafana/provisioning/datasources/loki.yml
 ├── grafana/provisioning/dashboards/dashboards.yml
 └── grafana/dashboards/*.json
 ```
@@ -190,10 +193,13 @@ bind mount로 연결하는 host 경로가 없으면 Docker가 의도치 않은 �
 sudo install -d -o deploy -g deploy /opt/haejillyeok/infra/otel-collector
 sudo install -d -o deploy -g deploy /opt/haejillyeok/infra/prometheus/data
 sudo install -d -o deploy -g deploy /opt/haejillyeok/infra/tempo/data
+sudo install -d -o deploy -g deploy /opt/haejillyeok/infra/loki/data
+sudo install -d -o deploy -g deploy /opt/haejillyeok/infra/promtail/data
 sudo install -d -o deploy -g deploy /opt/haejillyeok/infra/grafana/data
 sudo install -d -o deploy -g deploy /opt/haejillyeok/infra/grafana/provisioning/datasources
 sudo install -d -o deploy -g deploy /opt/haejillyeok/infra/grafana/provisioning/dashboards
 sudo install -d -o deploy -g deploy /opt/haejillyeok/infra/grafana/dashboards
+sudo install -d -o deploy -g deploy /var/log/haejillyeok
 ```
 
 설정 파일이 배포되어 있는지 확인합니다.
@@ -202,8 +208,11 @@ sudo install -d -o deploy -g deploy /opt/haejillyeok/infra/grafana/dashboards
 test -f /opt/haejillyeok/infra/otel-collector/config.yml
 test -f /opt/haejillyeok/infra/prometheus/prometheus.yml
 test -f /opt/haejillyeok/infra/tempo/tempo.yml
+test -f /opt/haejillyeok/infra/loki/loki.yml
+test -f /opt/haejillyeok/infra/promtail/promtail.yml
 test -f /opt/haejillyeok/infra/grafana/provisioning/datasources/prometheus.yml
 test -f /opt/haejillyeok/infra/grafana/provisioning/datasources/tempo.yml
+test -f /opt/haejillyeok/infra/grafana/provisioning/datasources/loki.yml
 test -f /opt/haejillyeok/infra/grafana/provisioning/dashboards/dashboards.yml
 ```
 
@@ -222,6 +231,7 @@ docker/grafana/dashboards/fastapi-traces.json
 sudo chown -R 472:472 /opt/haejillyeok/infra/grafana/data
 sudo chown -R 65534:65534 /opt/haejillyeok/infra/prometheus/data
 sudo chown -R 10001:10001 /opt/haejillyeok/infra/tempo/data
+sudo chown -R 10001:10001 /opt/haejillyeok/infra/loki/data
 ```
 
 ### 3. 환경 변수 설정
@@ -240,6 +250,8 @@ OTEL_HTTP_HOST_PORT=4318
 OTEL_PROMETHEUS_HOST_PORT=9464
 PROMETHEUS_HOST_PORT=9090
 TEMPO_HOST_PORT=3200
+LOKI_HOST_PORT=3100
+PROMTAIL_HOST_PORT=9080
 GRAFANA_HOST_PORT=3000
 GRAFANA_ADMIN_USER=admin
 GRAFANA_ADMIN_PASSWORD=change-me
