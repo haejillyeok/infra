@@ -1,0 +1,68 @@
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: haejillyeok-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol-contrib/config.yml"]
+    ports:
+      - "${OTEL_HTTP_HOST_PORT:-4318}:4318"
+      - "${OTEL_PROMETHEUS_HOST_PORT:-9464}:9464"
+    volumes:
+      - /opt/haejillyeok/infra/otel-collector/config.yml:/etc/otelcol-contrib/config.yml:ro
+    networks:
+      - backend_default
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: haejillyeok-prometheus
+    restart: unless-stopped
+    depends_on:
+      - otel-collector
+    ports:
+      - "${PROMETHEUS_HOST_PORT:-9090}:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    volumes:
+      - /opt/haejillyeok/infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/haejillyeok/infra/prometheus/data:/prometheus
+    networks:
+      - backend_default
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: haejillyeok-tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    ports:
+      - "${TEMPO_HOST_PORT:-3200}:3200"
+    volumes:
+      - /opt/haejillyeok/infra/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - /opt/haejillyeok/infra/tempo/data:/var/tempo
+    networks:
+      - backend_default
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: haejillyeok-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - tempo
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "${GRAFANA_HOST_PORT:-3000}:3000"
+    volumes:
+      - /opt/haejillyeok/infra/grafana/data:/var/lib/grafana
+      - /opt/haejillyeok/infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - /opt/haejillyeok/infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - backend_default
+
+networks:
+  backend_default:
+    external: true
