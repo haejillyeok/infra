@@ -166,6 +166,12 @@ cd /opt/haejillyeok/infra
 
 앱 서버 compose가 이미 `backend_default`를 만들었다면 이 단계는 생략할 수 있습니다.
 
+Docker network CIDR은 Nginx allowlist 등에서 재사용할 수 있도록 고정합니다.
+
+```bash
+BACKEND_NETWORK_SUBNET=172.30.0.0/16
+```
+
 ```bash
 docker network ls
 docker network inspect backend_default
@@ -174,13 +180,19 @@ docker network inspect backend_default
 네트워크가 없다면 생성합니다.
 
 ```bash
-docker network create backend_default
+docker network create --subnet "$BACKEND_NETWORK_SUBNET" backend_default
 ```
 
 반복 실행해도 안전하게 처리하려면 아래 명령을 사용합니다.
 
 ```bash
-docker network inspect backend_default >/dev/null 2>&1 || docker network create backend_default
+docker network inspect backend_default >/dev/null 2>&1 || docker network create --subnet "$BACKEND_NETWORK_SUBNET" backend_default
+```
+
+이미 생성된 Docker network의 subnet은 변경할 수 없습니다. 기존 `backend_default`가 다른 subnet으로 만들어져 있다면 연결된 컨테이너를 내린 뒤 네트워크를 다시 만들어야 합니다.
+
+```bash
+docker network inspect backend_default --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
 ```
 
 ### 2. 볼륨 경로 준비
@@ -305,9 +317,8 @@ Ubuntu 계열 서버에서 Nginx를 설치하고, 도메인을 서버에 연결�
 ```bash
 DOMAIN=example.com
 APP_PORT=3000
-AGENT_DOMAIN=agent.example.com
 AGENT_PORT=31080
-DOCKER_SERVER_PUBLIC_IP=203.0.113.10
+BACKEND_NETWORK_SUBNET=172.30.0.0/16
 ```
 
 ### 1. Nginx 설치
@@ -352,7 +363,6 @@ DNS 전파가 되었는지 서버 또는 로컬 터미널에서 확인합니다.
 ```bash
 dig +short $DOMAIN
 dig +short www.$DOMAIN
-dig +short $AGENT_DOMAIN
 ```
 
 반환된 IP가 서버 Public IPv4와 같아야 합니다.
@@ -361,9 +371,11 @@ dig +short $AGENT_DOMAIN
 
 API 앱이 서버 내부에서 `APP_PORT`로 실행 중이고, agent 앱이 `AGENT_PORT`로 실행 중이라고 가정한 reverse proxy 예시입니다.
 
-문서 경로, API 경로, WebSocket 경로를 분리해서 관리합니다. WebSocket 경로에만 긴 timeout을 적용합니다.
+문서 경로, API 경로, WebSocket 경로, agent 경로를 분리해서 관리합니다. WebSocket 경로에만 긴 timeout을 적용합니다.
 
 `proxy_pass`에 뒤쪽 URI를 붙이지 않으면 Nginx가 요청받은 path와 query string을 그대로 upstream에 전달합니다. 예를 들어 `/api/users?page=1` 요청은 앱에도 `/api/users?page=1`로 전달됩니다.
+
+agent 경로는 Docker 고정 subnet에서 들어온 요청만 허용하고, `/agent` prefix를 제거해 agent 앱 루트(`/`)로 전달합니다. 예를 들어 `/agent/tasks` 요청은 agent 앱에는 `/tasks`로 전달됩니다.
 
 ```nginx
 server {
@@ -395,6 +407,28 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    location = /agent {
+        allow $BACKEND_NETWORK_SUBNET;
+        deny all;
+
+        proxy_pass http://127.0.0.1:$AGENT_PORT/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ^~ /agent/ {
+        allow $BACKEND_NETWORK_SUBNET;
+        deny all;
+
+        proxy_pass http://127.0.0.1:$AGENT_PORT/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location ~ ^/ws(/|$) {
         proxy_pass http://127.0.0.1:$APP_PORT;
         proxy_http_version 1.1;
@@ -412,53 +446,25 @@ server {
         return 404;
     }
 }
-
-server {
-    listen 80;
-    listen [::]:80;
-
-    server_name $AGENT_DOMAIN;
-
-    # Certbot HTTP-01 인증용
-    # 이 경로는 Let's Encrypt가 외부에서 접근해야 하므로 막으면 안 됨
-    location ^~ /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-        allow all;
-    }
-
-    location / {
-        allow $DOCKER_SERVER_PUBLIC_IP;
-        deny all;
-
-        proxy_pass http://127.0.0.1:$AGENT_PORT;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
 ```
 
-위 설정을 각각 `/etc/nginx/sites-available/$DOMAIN`, `/etc/nginx/sites-available/$AGENT_DOMAIN`에 저장합니다. 실제 도메인, 포트, `allow` IP는 위 변수 값에 맞게 바꿉니다.
+위 설정을 `/etc/nginx/sites-available/$DOMAIN`에 저장합니다. 실제 도메인과 포트는 위 변수 값에 맞게 바꿉니다.
 
 앱의 WebSocket endpoint가 `/socket.io/`, `/api/ws/`처럼 다르다면 API 설정의 `location ~ ^/ws(/|$)`를 실제 경로에 맞게 바꿉니다. 각 `proxy_pass`는 `http://127.0.0.1:$APP_PORT`처럼 끝나야 하며, 뒤에 `/api`, `/ws`, `/`를 덧붙이지 않습니다. 이미 수립된 WebSocket 연결은 Nginx가 중간에서 자동 복구할 수 없으므로, 클라이언트 재연결 로직과 앱 heartbeat를 함께 두는 것이 안정적입니다.
-
-agent 도메인은 `DOCKER_SERVER_PUBLIC_IP`에서 들어오는 요청만 허용합니다. Certbot 인증 경로는 Let's Encrypt가 외부에서 접근해야 하므로 IP 제한을 걸지 않습니다.
 
 설정을 활성화하고 Nginx 문법을 확인합니다.
 
 ```bash
 sudo ln -s /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/$DOMAIN
-sudo ln -s /etc/nginx/sites-available/$AGENT_DOMAIN /etc/nginx/sites-enabled/$AGENT_DOMAIN
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-HTTP로 도메인이 서버에 연결되는지 확인합니다. agent 도메인은 `DOCKER_SERVER_PUBLIC_IP`에서 요청할 때만 앱으로 전달됩니다.
+HTTP로 도메인이 서버에 연결되는지 확인합니다.
 
 ```bash
 curl -I http://$DOMAIN
-curl -I http://$AGENT_DOMAIN
+curl -I http://$DOMAIN/agent
 ```
 
 ### 4. Certbot 설치
@@ -481,13 +487,13 @@ sudo ln -sf /snap/bin/certbot /usr/local/bin/certbot
 Nginx 설정을 Certbot이 읽어서 인증서를 발급하고 HTTPS 설정까지 반영합니다.
 
 ```bash
-sudo certbot --nginx -d $DOMAIN -d www.$DOMAIN -d $AGENT_DOMAIN
+sudo certbot --nginx -d $DOMAIN -d www.$DOMAIN
 ```
 
 `www` 도메인을 사용하지 않는다면 하나만 발급합니다.
 
 ```bash
-sudo certbot --nginx -d $DOMAIN -d $AGENT_DOMAIN
+sudo certbot --nginx -d $DOMAIN
 ```
 
 발급 후 HTTPS 응답을 확인합니다.
