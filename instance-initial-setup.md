@@ -305,6 +305,9 @@ Ubuntu 계열 서버에서 Nginx를 설치하고, 도메인을 서버에 연결�
 ```bash
 DOMAIN=example.com
 APP_PORT=3000
+AGENT_DOMAIN=agent.example.com
+AGENT_PORT=31080
+DOCKER_SERVER_PUBLIC_IP=203.0.113.10
 ```
 
 ### 1. Nginx 설치
@@ -349,13 +352,14 @@ DNS 전파가 되었는지 서버 또는 로컬 터미널에서 확인합니다.
 ```bash
 dig +short $DOMAIN
 dig +short www.$DOMAIN
+dig +short $AGENT_DOMAIN
 ```
 
 반환된 IP가 서버 Public IPv4와 같아야 합니다.
 
 ### 3. Nginx 서버 블록 생성
 
-앱이 서버 내부에서 `APP_PORT`로 실행 중이라고 가정한 reverse proxy 예시입니다.
+API 앱이 서버 내부에서 `APP_PORT`로 실행 중이고, agent 앱이 `AGENT_PORT`로 실행 중이라고 가정한 reverse proxy 예시입니다.
 
 문서 경로, API 경로, WebSocket 경로를 분리해서 관리합니다. WebSocket 경로에만 긴 timeout을 적용합니다.
 
@@ -368,6 +372,13 @@ server {
     listen [::]:80;
 
     server_name $DOMAIN www.$DOMAIN;
+
+    # Certbot HTTP-01 인증용
+    # 이 경로는 Let's Encrypt가 외부에서 접근해야 하므로 막으면 안 됨
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        allow all;
+    }
 
     location ~ ^/(docs|redoc|openapi\.json|ws-docs|health)(/|$) {
         proxy_pass http://127.0.0.1:$APP_PORT;
@@ -403,22 +414,53 @@ server {
     }
 }
 EOF
+
+sudo tee /etc/nginx/sites-available/$AGENT_DOMAIN > /dev/null <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+
+    server_name $AGENT_DOMAIN;
+
+    # Certbot HTTP-01 인증용
+    # 이 경로는 Let's Encrypt가 외부에서 접근해야 하므로 막으면 안 됨
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        allow all;
+    }
+
+    location / {
+        allow $DOCKER_SERVER_PUBLIC_IP;
+        deny all;
+
+        proxy_pass http://127.0.0.1:$AGENT_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
 ```
 
-앱의 WebSocket endpoint가 `/socket.io/`, `/api/ws/`처럼 다르다면 `location ~ ^/ws(/|$)`를 실제 경로에 맞게 바꿉니다. 각 `proxy_pass`는 `http://127.0.0.1:$APP_PORT`처럼 끝나야 하며, 뒤에 `/api`, `/ws`, `/`를 덧붙이지 않습니다. 이미 수립된 WebSocket 연결은 Nginx가 중간에서 자동 복구할 수 없으므로, 클라이언트 재연결 로직과 앱 heartbeat를 함께 두는 것이 안정적입니다.
+앱의 WebSocket endpoint가 `/socket.io/`, `/api/ws/`처럼 다르다면 API 설정의 `location ~ ^/ws(/|$)`를 실제 경로에 맞게 바꿉니다. 각 `proxy_pass`는 `http://127.0.0.1:$APP_PORT`처럼 끝나야 하며, 뒤에 `/api`, `/ws`, `/`를 덧붙이지 않습니다. 이미 수립된 WebSocket 연결은 Nginx가 중간에서 자동 복구할 수 없으므로, 클라이언트 재연결 로직과 앱 heartbeat를 함께 두는 것이 안정적입니다.
+
+agent 도메인은 `DOCKER_SERVER_PUBLIC_IP`에서 들어오는 요청만 허용합니다. Certbot 인증 경로는 Let's Encrypt가 외부에서 접근해야 하므로 IP 제한을 걸지 않습니다.
 
 설정을 활성화하고 Nginx 문법을 확인합니다.
 
 ```bash
 sudo ln -s /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/$DOMAIN
+sudo ln -s /etc/nginx/sites-available/$AGENT_DOMAIN /etc/nginx/sites-enabled/$AGENT_DOMAIN
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-HTTP로 도메인이 서버에 연결되는지 확인합니다.
+HTTP로 도메인이 서버에 연결되는지 확인합니다. agent 도메인은 `DOCKER_SERVER_PUBLIC_IP`에서 요청할 때만 앱으로 전달됩니다.
 
 ```bash
 curl -I http://$DOMAIN
+curl -I http://$AGENT_DOMAIN
 ```
 
 ### 4. Certbot 설치
@@ -441,13 +483,13 @@ sudo ln -sf /snap/bin/certbot /usr/local/bin/certbot
 Nginx 설정을 Certbot이 읽어서 인증서를 발급하고 HTTPS 설정까지 반영합니다.
 
 ```bash
-sudo certbot --nginx -d $DOMAIN -d www.$DOMAIN
+sudo certbot --nginx -d $DOMAIN -d www.$DOMAIN -d $AGENT_DOMAIN
 ```
 
 `www` 도메인을 사용하지 않는다면 하나만 발급합니다.
 
 ```bash
-sudo certbot --nginx -d $DOMAIN
+sudo certbot --nginx -d $DOMAIN -d $AGENT_DOMAIN
 ```
 
 발급 후 HTTPS 응답을 확인합니다.
