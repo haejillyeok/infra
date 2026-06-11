@@ -357,6 +357,10 @@ dig +short www.$DOMAIN
 
 앱이 서버 내부에서 `APP_PORT`로 실행 중이라고 가정한 reverse proxy 예시입니다.
 
+문서 경로, API 경로, WebSocket 경로를 분리해서 관리합니다. WebSocket 경로에만 긴 timeout을 적용합니다.
+
+`proxy_pass`에 뒤쪽 URI를 붙이지 않으면 Nginx가 요청받은 path와 query string을 그대로 upstream에 전달합니다. 예를 들어 `/api/users?page=1` 요청은 앱에도 `/api/users?page=1`로 전달됩니다.
+
 ```bash
 sudo tee /etc/nginx/sites-available/$DOMAIN > /dev/null <<EOF
 server {
@@ -365,7 +369,23 @@ server {
 
     server_name $DOMAIN www.$DOMAIN;
 
-    location / {
+    location ~ ^/(docs|redoc|openapi\.json|ws-docs|health)(/|$) {
+        proxy_pass http://127.0.0.1:$APP_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location ~ ^/api(/|$) {
+        proxy_pass http://127.0.0.1:$APP_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location ~ ^/ws(/|$) {
         proxy_pass http://127.0.0.1:$APP_PORT;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -374,10 +394,18 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+
+    location / {
+        return 404;
     }
 }
 EOF
 ```
+
+앱의 WebSocket endpoint가 `/socket.io/`, `/api/ws/`처럼 다르다면 `location ~ ^/ws(/|$)`를 실제 경로에 맞게 바꿉니다. 각 `proxy_pass`는 `http://127.0.0.1:$APP_PORT`처럼 끝나야 하며, 뒤에 `/api`, `/ws`, `/`를 덧붙이지 않습니다. 이미 수립된 WebSocket 연결은 Nginx가 중간에서 자동 복구할 수 없으므로, 클라이언트 재연결 로직과 앱 heartbeat를 함께 두는 것이 안정적입니다.
 
 설정을 활성화하고 Nginx 문법을 확인합니다.
 
