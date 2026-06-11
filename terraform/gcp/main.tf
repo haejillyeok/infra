@@ -8,7 +8,8 @@ locals {
   name = var.project
   ssh_keys = join("\n", compact([
     "${var.ssh_username}:${var.ssh_public_key}",
-    "${var.deploy_username}:${var.deploy_ssh_public_key}"
+    "${var.deploy_username}:${var.deploy_ssh_public_key}",
+    var.agent_ssh_public_key == "" ? "" : "${var.deploy_username}:${var.agent_ssh_public_key}"
   ]))
 
   labels = {

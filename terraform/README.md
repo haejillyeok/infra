@@ -38,7 +38,10 @@ terraform init -backend-config=backend.hcl
 - DB 비밀번호: `db_password`
 - 기본 접속용 SSH public key: `ssh_public_key`
 - 배포용 SSH public key: `deploy_ssh_public_key`
+- Agent가 `deploy` 유저로 접속할 때 추가로 넣을 SSH public key: `agent_ssh_public_key`
 
 각 클라우드 디렉터리의 `terraform.tfvars.example`을 복사해서 `terraform.tfvars`로 사용하거나, `TF_VAR_...` 환경변수로 주입하세요. `terraform.tfvars`와 `.env`는 `.gitignore`에 포함되어 있습니다.
+
+`AGENT_SSH_KEY`를 쓰는 환경에서는 값이 SSH public key일 때만 `TF_VAR_agent_ssh_public_key="$AGENT_SSH_KEY"`로 넘기세요. Private key는 VM의 `authorized_keys`에 넣을 수 없습니다.
 
 Azure VM의 기본 접속용 `ssh_public_key`는 RSA 형식이어야 합니다.

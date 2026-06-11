@@ -68,6 +68,13 @@ variable "deploy_ssh_public_key" {
   sensitive   = true
 }
 
+variable "agent_ssh_public_key" {
+  type        = string
+  description = "Optional public SSH key for the Agent to access the deploy user. Set from AGENT_SSH_KEY only when it contains a public key."
+  sensitive   = true
+  default     = ""
+}
+
 variable "boot_disk_size_gb" {
   type    = number
   default = 10

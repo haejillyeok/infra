@@ -9,6 +9,11 @@ data "aws_ssm_parameter" "ubuntu_ami" {
 locals {
   name = var.project
   azs  = var.availability_zones
+  deploy_ssh_authorized_keys = compact([
+    var.deploy_ssh_public_key,
+    var.agent_ssh_public_key
+  ])
+
   deploy_user_cloud_config = yamlencode({
     users = [
       "default",
@@ -17,7 +22,7 @@ locals {
         groups              = "users"
         shell               = "/bin/bash"
         lock_passwd         = true
-        ssh_authorized_keys = [var.deploy_ssh_public_key]
+        ssh_authorized_keys = local.deploy_ssh_authorized_keys
       }
     ]
   })

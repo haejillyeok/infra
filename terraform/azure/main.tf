@@ -5,13 +5,15 @@ provider "azurerm" {
 locals {
   name                = var.project
   resource_group_name = var.resource_group_name
+
   deploy_user_cloud_config = yamlencode({
     users = [
       {
-        name                = var.deploy_username
-        groups              = "users"
-        shell               = "/bin/bash"
-        lock_passwd         = true
+        name        = var.deploy_username
+        groups      = "users"
+        shell       = "/bin/bash"
+        lock_passwd = true
+        # Keep cloud-init stable for existing VMs. Add extra deploy-user keys manually to avoid forcing VM replacement.
         ssh_authorized_keys = [var.deploy_ssh_public_key]
       }
     ]
@@ -49,6 +51,7 @@ resource "azurerm_subnet" "db" {
   resource_group_name  = azurerm_resource_group.this.name
   virtual_network_name = azurerm_virtual_network.this.name
   address_prefixes     = [var.db_subnet_cidr]
+  service_endpoints    = ["Microsoft.Storage"]
 
   delegation {
     name = "postgresql-flexible-server"
@@ -165,7 +168,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
 
   os_disk {
     caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
+    storage_account_type = var.os_disk_storage_account_type
     disk_size_gb         = var.os_disk_size_gb
   }
 

@@ -25,8 +25,9 @@ terraform apply
 - VM public IP에는 DNS label을 연결하고, SSH 명령은 FQDN 기준으로 출력합니다.
 - VM NSG는 SSH 22, HTTP 80, HTTPS 443 inbound를 허용합니다.
 - 기본 접속은 `ubuntu` 유저와 RSA 형식의 `ssh_public_key`를 사용합니다.
-- 배포 접속은 cloud-init으로 생성한 `deploy` 유저와 `deploy_ssh_public_key`를 사용합니다.
+- 배포 접속은 cloud-init으로 생성한 `deploy` 유저와 `deploy_ssh_public_key`를 사용합니다. 기존 VM에 추가 키가 필요하면 VM 안에서 `deploy` 유저의 `authorized_keys`에 직접 추가합니다.
 - VM 이미지는 Canonical의 Ubuntu 26.04 LTS server 이미지를 사용합니다.
+- VM OS 디스크는 Azure 무료 계정의 P6 managed disk 한도에 맞춰 `Premium_LRS` 64 GiB를 기본값으로 사용합니다.
 - PostgreSQL Flexible Server는 delegated private subnet에 배치하고 public network access를 비활성화합니다.
 - DB subnet NSG는 VM subnet에서 오는 PostgreSQL 5432만 허용합니다.
 - 로컬 DB 접속은 VM을 bastion으로 쓰는 SSH tunnel로만 열도록 `postgres_ssh_tunnel_command`를 출력합니다.
@@ -34,4 +35,4 @@ terraform apply
 비용 주의:
 
 - VM/PostgreSQL 비용은 계정 혜택, 지역, SKU 조건에 따라 달라질 수 있습니다.
-- Static public IP와 스토리지/백업은 무료 한도 밖에서 과금될 수 있습니다.
+- Static public IP, 스토리지, 백업은 무료 한도와 사용량을 초과하면 과금될 수 있습니다.

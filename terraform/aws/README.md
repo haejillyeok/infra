@@ -19,7 +19,7 @@ terraform apply
 - EC2는 public subnet에 배치하고 Elastic IP를 연결합니다.
 - EC2 AMI는 Canonical public SSM parameter에서 Ubuntu 26.04 LTS 최신 이미지를 조회합니다.
 - 기본 접속은 Ubuntu 기본 유저와 `ssh_public_key`를 사용합니다.
-- 배포 접속은 cloud-init으로 생성한 `deploy` 유저와 `deploy_ssh_public_key`를 사용합니다.
+- 배포 접속은 cloud-init으로 생성한 `deploy` 유저와 `deploy_ssh_public_key`를 사용합니다. `agent_ssh_public_key`가 있으면 같은 `deploy` 유저의 authorized_keys에 추가합니다.
 - RDS는 private subnet에 배치하고 public access를 비활성화합니다.
 - RDS security group은 EC2 security group에서 오는 PostgreSQL 5432만 허용합니다.
 - 로컬 DB 접속은 EC2를 bastion으로 쓰는 SSH tunnel로만 열도록 `rds_ssh_tunnel_command`를 출력합니다.

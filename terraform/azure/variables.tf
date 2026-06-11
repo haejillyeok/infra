@@ -63,9 +63,23 @@ variable "deploy_ssh_public_key" {
   sensitive   = true
 }
 
+variable "agent_ssh_public_key" {
+  type        = string
+  description = "Deprecated no-op. Keep extra deploy-user keys out of cloud-init to avoid replacing existing VMs."
+  sensitive   = true
+  default     = ""
+}
+
 variable "os_disk_size_gb" {
-  type    = number
-  default = 30
+  type        = number
+  description = "OS disk size in GiB. 64 GiB maps to the Azure free account P6 managed disk allowance."
+  default     = 64
+}
+
+variable "os_disk_storage_account_type" {
+  type        = string
+  description = "OS disk storage account type. Premium_LRS with 64 GiB maps to the P6 managed disk tier."
+  default     = "Premium_LRS"
 }
 
 variable "ubuntu_image_publisher" {

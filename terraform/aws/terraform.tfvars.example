@@ -1,4 +1,5 @@
 ssh_public_key        = "ssh-ed25519 AAAA... user@example"
 deploy_ssh_public_key = "ssh-ed25519 AAAA... deploy@example"
+agent_ssh_public_key  = ""
 db_username           = "replace-with-db-username"
 db_password           = "replace-with-long-random-password"
